@@ -1,27 +1,40 @@
 #!/bin/bash
 
-# Definições de variáveis
-APP_NAME="image-merger"
+# Configurações
+APP_NAME="image-merger-cyan"
 VERSION="1.0.0"
-BUILD_DIR="image_merger_dist"
-PKG_DIR="${APP_NAME}_${VERSION}"
+PKG_DIR="${APP_NAME}_${VERSION}_amd64"
+BINARY_NAME="image_merger"
 
-# 1. Compilação com PyInstaller
-echo "Iniciando compilação com PyInstaller..."
-pyinstaller --noconsole --onefile --add-data "image.png:." image_merger.py
+echo "--- Iniciando processo de empacotamento ---"
 
-# 2. Criação da estrutura de diretórios Debian
-echo "Criando estrutura do pacote..."
+# 1. Limpeza de builds anteriores
+rm -rf build dist "$PKG_DIR" "${PKG_DIR}.deb"
+
+# 2. Compilação com PyInstaller
+# --collect-all PySide6 garante que os plugins de plataforma (xcb) sejam incluídos
+echo "Compilando binário com PyInstaller..."
+python3 -m PyInstaller --noconsole --onefile \
+    --name "$BINARY_NAME" \
+    --collect-all PySide6 \
+    image_merger.py
+
+if [ ! -f "dist/$BINARY_NAME" ]; then
+    echo "Erro: Falha na compilação do binário."
+    exit 1
+fi
+
+# 3. Criando estrutura Debian
+echo "Criando estrutura do diretório .deb..."
 mkdir -p "$PKG_DIR/DEBIAN"
 mkdir -p "$PKG_DIR/usr/bin"
 mkdir -p "$PKG_DIR/usr/share/applications"
-mkdir -p "$PKG_DIR/usr/share/icons"
 
-# 3. Movendo arquivos
-cp "dist/image_merger" "$PKG_DIR/usr/bin/"
-cp "image.png" "$PKG_DIR/usr/share/icons/image-merger.png"
+# 4. Movendo o binário
+cp "dist/$BINARY_NAME" "$PKG_DIR/usr/bin/"
 
-# 4. Criando arquivo DEBIAN/control
+# 5. Criando o arquivo de controle (Dependências críticas incluídas)
+# libxcb-cursor0 é vital para Qt6 no Ubuntu/Mint
 cat <<EOF > "$PKG_DIR/DEBIAN/control"
 Package: $APP_NAME
 Version: $VERSION
@@ -29,22 +42,28 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Usuario <contato@email.com>
-Description: Interface Dash para junção e conversão de imagens.
+Depends: libxcb-cursor0, libxcb-xinerama0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-shape0, libxkbcommon-x11-0
+Description: Interface Cyan Engine para junção e conversão de imagens usando PySide6.
 EOF
 
-# 5. Criando o atalho .desktop
-cat <<EOF > "$PKG_DIR/usr/share/applications/image-merger.desktop"
+# 6. Criando o atalho no menu (Desktop Entry)
+cat <<EOF > "$PKG_DIR/usr/share/applications/$APP_NAME.desktop"
 [Desktop Entry]
-Name=Image Merger Dash
-Exec=/usr/bin/image_merger
-Icon=/usr/share/icons/image-merger.png
+Name=Image Merger Cyan
+Comment=High-Tech Image Processing
+Exec=/usr/bin/$BINARY_NAME
+Icon=image-x-generic
 Type=Application
 Categories=Graphics;
 Terminal=false
 EOF
 
-# 6. Construindo o pacote .deb
-echo "Gerando arquivo .deb..."
+# 7. Ajustando permissões
+chmod 755 "$PKG_DIR/usr/bin/$BINARY_NAME"
+chmod 644 "$PKG_DIR/usr/share/applications/$APP_NAME.desktop"
+
+# 8. Construindo o pacote
+echo "Gerando pacote .deb..."
 dpkg-deb --build "$PKG_DIR"
 
-echo "Processo concluído: ${PKG_DIR}.deb gerado."
+echo "--- Concluído: ${PKG_DIR}.deb gerado ---"
